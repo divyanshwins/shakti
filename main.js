@@ -1086,41 +1086,54 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
     const wall = start.clone().addScaledVector(back, Math.max(0.1, Math.min(tx, tz)));
     const along = new THREE.Vector3(back.z, 0, -back.x);   // horizontal, in-plane
     const inward = back.clone().multiplyScalar(-1);
-    const span = Math.abs(along.x) > Math.abs(along.z)
-      ? shell.max.x - shell.min.x : shell.max.z - shell.min.z;
-    const half = 0.42 * span;
-    const yTop = capY - 0.18;
-    const wx = wall.x + inward.x * 0.03;
-    const wz = wall.z + inward.z * 0.03;
+
+    // Run the strip the full length of the black wall: corner to corner,
+    // from the door wall across to the window wall. Centre it on the wall
+    // itself (not the seat) and keep it a single straight, continuous line.
+    const alongX = Math.abs(along.x) >= Math.abs(along.z);
+    const aMin = alongX ? shell.min.x : shell.min.z;
+    const aMax = alongX ? shell.max.x : shell.max.z;
+    const aMid = (aMin + aMax) / 2;
+    const half = (aMax - aMin) / 2 - 0.03;   // hair inset from each corner
+    const yTop = capY - 0.14;
+    // Wall plane sits at wall.x / wall.z; nudge 2 cm off so the beads read
+    // as surface-mounted on the plaster.
+    const wx = (alongX ? aMid : wall.x) + inward.x * 0.02;
+    const wz = (alongX ? wall.z : aMid) + inward.z * 0.02;
 
     const redBeadMat = new THREE.MeshStandardMaterial({
       color: 0xff2a2a, emissive: 0xff0000, emissiveIntensity: 2.4,
       roughness: 0.4, metalness: 0,
     });
     redBeadMat.toneMapped = false;   // let the red push past the bloom threshold
-    const redBeadGeo = new THREE.SphereGeometry(0.022, 10, 8);
-    const N = 24;
+    const redBeadGeo = new THREE.SphereGeometry(0.02, 10, 8);
+    // ~1 bead every 6 cm so the run reads as an unbroken line of light.
+    const N = Math.max(24, Math.round((half * 2) / 0.06));
     for (let i = 0; i < N; i++) {
-      const f = i / (N - 1);
-      const off = (f - 0.5) * 2 * half;
-      const droop = Math.sin(f * Math.PI) * 0.06;   // gentle swag
+      const off = (i / (N - 1) - 0.5) * 2 * half;
       const bead = new THREE.Mesh(redBeadGeo, redBeadMat);
-      bead.position.set(wx + along.x * off, yTop - droop, wz + along.z * off);
+      bead.position.set(wx + along.x * off, yTop, wz + along.z * off);
       bead.castShadow = false;
       scene.add(bead);
     }
-    // Point fills close to the wall so the black plaster picks up the red.
-    for (let i = 0; i < 4; i++) {
-      const off = (i / 3 - 0.5) * 2 * half * 0.8;
-      const L = new THREE.PointLight(0xff1512, 0.55, 3.6, 2);
-      L.position.set(wx + inward.x * 0.25 + along.x * off, yTop - 0.25,
+    // Point fills spread across the whole span so the black plaster picks up
+    // the red evenly from door wall to window wall.
+    const fillN = 7;
+    for (let i = 0; i < fillN; i++) {
+      const off = (i / (fillN - 1) - 0.5) * 2 * half * 0.95;
+      const L = new THREE.PointLight(0xff1512, 0.5, 3.6, 2);
+      L.position.set(wx + inward.x * 0.25 + along.x * off, yTop - 0.22,
                      wz + inward.z * 0.25 + along.z * off);
       scene.add(L);
     }
-    // One broader, dimmer wash to lift the whole wall out of pure black.
-    const wash = new THREE.PointLight(0xff2018, 0.4, 6.5, 2);
-    wash.position.set(wx + inward.x * 0.6, yTop - 0.7, wz + inward.z * 0.6);
-    scene.add(wash);
+    // Two broad, dim washes to lift the full wall out of pure black.
+    for (let i = 0; i < 2; i++) {
+      const off = (i - 0.5) * half;
+      const wash = new THREE.PointLight(0xff2018, 0.34, 7.5, 2);
+      wash.position.set(wx + inward.x * 0.6 + along.x * off, yTop - 0.7,
+                        wz + inward.z * 0.6 + along.z * off);
+      scene.add(wash);
+    }
   }
 
   for (const n of ['_30', '_26', '_Translucent_Glass_Gray_2', 'Color_M09']) {
