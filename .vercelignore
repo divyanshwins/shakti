@@ -1,0 +1,21 @@
+# Vercel serves this repo as static files. Only the web assets below are needed:
+#   index.html, main.js, books.js, vendor/, room.obj, room.mtl, textures/, books/
+# Everything else is source art / backups / exports (~180 MB) that bloated the
+# deployment and caused the upload to be truncated (only index.html shipped).
+
+*.fbx
+*.skp
+*.zip
+*.xlsx
+.DS_Store
+**/.DS_Store
+
+RSC/
+old_model_backup/
+untitled folder/
+BOOKSFILES/
+wallimages/
+
+server.js
+README.md
+.gitattributes
