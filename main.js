@@ -479,12 +479,11 @@ const clock = new THREE.Clock();
              on page load, cursor stays visible)
    • lock  — click the page for pointer lock and unlimited 360° mouse-look */
 // The reticle stays pinned to the centre of the screen and the pointer steers
-// the view under it. Travel is bounded to 120 deg total on each axis, measured
-// from the seated starting view, so you can search the desk and the wall but
-// never turn your back on them. No pointer lock — an unbounded relative-mouse
-// mode would let the view wind straight past those limits.
-const HALF_YAW = THREE.MathUtils.degToRad(85);
-const HALF_PITCH = THREE.MathUtils.degToRad(70);
+// the view under it. The view is unlocked: a full sweep of the pointer turns
+// the camera a full circle on yaw and almost straight up/down on pitch, so the
+// character can look anywhere in the room, including behind the desk.
+const HALF_YAW = Math.PI;                          // full 360° turn, no limit
+const HALF_PITCH = THREE.MathUtils.degToRad(88);   // just shy of vertical
 let baseYaw = 0;
 let targetYaw = 0, targetPitch = 0;
 
@@ -919,19 +918,8 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
     lieYaw = Math.atan2(0, -towardFeet);
   }
 
-  // You can step back from the desk but only as far as the middle of the
-  // room — this is a view of one corner, not a space to wander.
-  {
-    const mid = area.getCenter(new THREE.Vector3());
-    const roam = new THREE.Box3().setFromPoints([
-      new THREE.Vector3(seatPos.x, area.min.y, seatPos.z),
-      new THREE.Vector3(mid.x, area.max.y, mid.z),
-    ]).expandByVector(new THREE.Vector3(0.75, 0, 0.75));
-    walkArea.min.x = Math.max(walkArea.min.x, roam.min.x);
-    walkArea.max.x = Math.min(walkArea.max.x, roam.max.x);
-    walkArea.min.z = Math.max(walkArea.min.z, roam.min.z);
-    walkArea.max.z = Math.min(walkArea.max.z, roam.max.z);
-  }
+  // Movement is unlocked: the player may roam the whole floor plane. Furniture
+  // still blocks via `obstacles`; only the room shell bounds the walk area.
 
   // A seated person faces their desk, so aim at the laptop rather than at
   // whichever direction happens to have the most clear floor.
@@ -1080,6 +1068,59 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
     const fill = new THREE.PointLight(0xffd090, 0.12, 6.0, 2);
     fill.position.set(c.x, Math.min(c.y, capY - 0.15), c.z);
     scene.add(fill);
+  }
+
+  // ---- Red fairy lights on the wall behind the desk ----
+  // The poster wall the character faces carries warm fairy lights; the wall
+  // at their back was unlit and read as solid black. Mirror the same swag of
+  // bulbs there, in red, with point fills so the plaster actually catches it.
+  {
+    const start = new THREE.Vector3(seatPos.x, 0, seatPos.z);
+    // rotation.y = baseYaw -> forward is (-sin, 0, -cos); the back wall is the
+    // opposite way.
+    const back = new THREE.Vector3(Math.sin(baseYaw), 0, Math.cos(baseYaw)).normalize();
+    const tx = back.x > 1e-4 ? (shell.max.x - start.x) / back.x
+             : back.x < -1e-4 ? (shell.min.x - start.x) / back.x : Infinity;
+    const tz = back.z > 1e-4 ? (shell.max.z - start.z) / back.z
+             : back.z < -1e-4 ? (shell.min.z - start.z) / back.z : Infinity;
+    const wall = start.clone().addScaledVector(back, Math.max(0.1, Math.min(tx, tz)));
+    const along = new THREE.Vector3(back.z, 0, -back.x);   // horizontal, in-plane
+    const inward = back.clone().multiplyScalar(-1);
+    const span = Math.abs(along.x) > Math.abs(along.z)
+      ? shell.max.x - shell.min.x : shell.max.z - shell.min.z;
+    const half = 0.42 * span;
+    const yTop = capY - 0.18;
+    const wx = wall.x + inward.x * 0.03;
+    const wz = wall.z + inward.z * 0.03;
+
+    const redBeadMat = new THREE.MeshStandardMaterial({
+      color: 0xff2a2a, emissive: 0xff0000, emissiveIntensity: 2.4,
+      roughness: 0.4, metalness: 0,
+    });
+    redBeadMat.toneMapped = false;   // let the red push past the bloom threshold
+    const redBeadGeo = new THREE.SphereGeometry(0.022, 10, 8);
+    const N = 24;
+    for (let i = 0; i < N; i++) {
+      const f = i / (N - 1);
+      const off = (f - 0.5) * 2 * half;
+      const droop = Math.sin(f * Math.PI) * 0.06;   // gentle swag
+      const bead = new THREE.Mesh(redBeadGeo, redBeadMat);
+      bead.position.set(wx + along.x * off, yTop - droop, wz + along.z * off);
+      bead.castShadow = false;
+      scene.add(bead);
+    }
+    // Point fills close to the wall so the black plaster picks up the red.
+    for (let i = 0; i < 4; i++) {
+      const off = (i / 3 - 0.5) * 2 * half * 0.8;
+      const L = new THREE.PointLight(0xff1512, 0.55, 3.6, 2);
+      L.position.set(wx + inward.x * 0.25 + along.x * off, yTop - 0.25,
+                     wz + inward.z * 0.25 + along.z * off);
+      scene.add(L);
+    }
+    // One broader, dimmer wash to lift the whole wall out of pure black.
+    const wash = new THREE.PointLight(0xff2018, 0.4, 6.5, 2);
+    wash.position.set(wx + inward.x * 0.6, yTop - 0.7, wz + inward.z * 0.6);
+    scene.add(wash);
   }
 
   for (const n of ['_30', '_26', '_Translucent_Glass_Gray_2', 'Color_M09']) {
