@@ -630,7 +630,42 @@ function toggleHud() {
    report real byte progress and, crucially, repaint a "building" message
    before parsing — parsing ~80k faces blocks the main thread, so a spinner
    started after that point would never get a chance to render. */
-const setStatus = (text) => { if (loadingEl) loadingEl.textContent = text; };
+const ringFill = document.getElementById('ring-fill');
+const loadText = document.getElementById('load-text');
+
+// Fill the throbber: 0 = empty ring, 1 = solid circle.
+const setProgress = (p) => {
+  if (ringFill) ringFill.style.transform = `translateY(${(1 - Math.max(0, Math.min(1, p))) * 100}%)`;
+};
+
+// Swap the caption with a quick fade.
+const setCaption = (text) => {
+  if (!loadText || loadText.textContent === text) return;
+  loadText.classList.add('swap');
+  setTimeout(() => { loadText.textContent = text; loadText.classList.remove('swap'); }, 250);
+};
+
+// Scripted captions, independent of real load progress.
+const captionPlan = [
+  ['Breathe in...', 3000], ['Breathe out...', 3000], ['Hey.', 1500],
+  ["It's loading.", 1500], ['Anytime now.', 1500], ['Breathe in...', 3000],
+  ['Breathe out...', 3000],
+];
+let captionTimer = null, captionStopped = false;
+(function runCaptions(i = 0) {
+  if (captionStopped) return;
+  const [text, ms] = captionPlan[i % captionPlan.length];
+  setCaption(text);
+  // After the plan ends, keep gently cycling breathe in / out until ready.
+  const next = i + 1 < captionPlan.length ? i + 1 : captionPlan.length - 2;
+  captionTimer = setTimeout(() => runCaptions(next), ms);
+})();
+const stopCaptions = () => { captionStopped = true; clearTimeout(captionTimer); };
+
+// Errors / plain messages only (progress is shown by the ring).
+const setStatus = (text) => {
+  if (text === 'could not load the room') { stopCaptions(); setCaption(text); }
+};
 
 async function fetchRoomText(url) {
   const res = await fetch(url);
@@ -653,9 +688,8 @@ async function fetchRoomText(url) {
     if (done) break;
     chunks.push(value);
     loaded += value.length;
-    setStatus(total
-      ? `${Math.min(99, Math.round((loaded / total) * 100))}%`
-      : `${(loaded / 1048576).toFixed(1)} MB`);
+    // Download is the bulk of the wait: 0 -> 85% of the ring.
+    if (total) setProgress(0.85 * Math.min(1, loaded / total));
   }
 
   const merged = new Uint8Array(loaded);
@@ -671,7 +705,7 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
 (async () => {
   let root;
   try {
-    setStatus('loading model…');
+    setProgress(0.02);
     await paint();
     const [text, mtlText] = await Promise.all([
       fetchRoomText('./room.obj'),
@@ -686,7 +720,7 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
         mtlColors.set(curMtl, new THREE.Color().setRGB(+p[1], +p[2], +p[3], THREE.SRGBColorSpace));
       }
     }
-    setStatus('building room');
+    setProgress(0.9);   // download done, parsing the model
     await paint();
     root = new OBJLoader().parse(text);
   } catch (err) {
@@ -1178,7 +1212,16 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
   // Hold the loading screen for one more painted frame so the first thing
   // revealed is the finished room, not a half-drawn one.
   await paint();
-  if (loadingEl) loadingEl.remove();
+  // Fill the circle, say so, and give the message two seconds before opening.
+  stopCaptions();
+  setProgress(1);
+  setCaption('Here goes...');
+  await new Promise((r) => setTimeout(r, 2000));
+  if (loadingEl) {
+    loadingEl.classList.add('done');
+    await new Promise((r) => setTimeout(r, 500));
+    loadingEl.remove();
+  }
 })();
 
 // Sample a ring of directions and keep the one with the most clear floor
