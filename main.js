@@ -638,33 +638,9 @@ const setProgress = (p) => {
   if (ringFill) ringFill.style.transform = `translateY(${(1 - Math.max(0, Math.min(1, p))) * 100}%)`;
 };
 
-// Swap the caption with a quick fade.
-const setCaption = (text) => {
-  if (!loadText || loadText.textContent === text) return;
-  loadText.classList.add('swap');
-  setTimeout(() => { loadText.textContent = text; loadText.classList.remove('swap'); }, 250);
-};
-
-// Scripted captions, independent of real load progress.
-const captionPlan = [
-  ['Breathe in...', 3000], ['Breathe out...', 3000], ['Hey.', 1500],
-  ["It's loading.", 1500], ['Anytime now.', 1500], ['Breathe in...', 3000],
-  ['Breathe out...', 3000],
-];
-let captionTimer = null, captionStopped = false;
-(function runCaptions(i = 0) {
-  if (captionStopped) return;
-  const [text, ms] = captionPlan[i % captionPlan.length];
-  setCaption(text);
-  // After the plan ends, keep gently cycling breathe in / out until ready.
-  const next = i + 1 < captionPlan.length ? i + 1 : captionPlan.length - 2;
-  captionTimer = setTimeout(() => runCaptions(next), ms);
-})();
-const stopCaptions = () => { captionStopped = true; clearTimeout(captionTimer); };
-
 // Errors / plain messages only (progress is shown by the ring).
 const setStatus = (text) => {
-  if (text === 'could not load the room') { stopCaptions(); setCaption(text); }
+  if (text === 'could not load the room' && loadText) loadText.className = 'err';
 };
 
 async function fetchRoomText(url) {
@@ -1213,9 +1189,8 @@ const paint = () => new Promise((r) => requestAnimationFrame(() => requestAnimat
   // revealed is the finished room, not a half-drawn one.
   await paint();
   // Fill the circle, say so, and give the message two seconds before opening.
-  stopCaptions();
   setProgress(1);
-  setCaption('Here goes...');
+  if (loadText) loadText.className = 'goes';
   await new Promise((r) => setTimeout(r, 2000));
   if (loadingEl) {
     loadingEl.classList.add('done');
